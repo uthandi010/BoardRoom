@@ -1,0 +1,47 @@
+@baseUrl = http://localhost:5199
+
+### Register
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "name": "Ada Lovelace",
+  "email": "ada@example.com",
+  "password": "Password123!"
+}
+
+### Login
+# @name login
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "ada@example.com",
+  "password": "Password123!"
+}
+
+### Create a workspace (paste the token from the login response above)
+POST {{baseUrl}}/api/workspaces
+Content-Type: application/json
+Authorization: Bearer PASTE_TOKEN_HERE
+
+{
+  "name": "Acme Inc"
+}
+
+### List my workspaces
+GET {{baseUrl}}/api/workspaces
+Authorization: Bearer PASTE_TOKEN_HERE
+
+### Create a board (replace 1 with a real workspace id)
+POST {{baseUrl}}/api/workspaces/1/boards
+Content-Type: application/json
+Authorization: Bearer PASTE_TOKEN_HERE
+
+{
+  "name": "Sprint 1"
+}
+
+### Get a board's columns and cards (replace 1 with a real board id)
+GET {{baseUrl}}/api/boards/1
+Authorization: Bearer PASTE_TOKEN_HERE

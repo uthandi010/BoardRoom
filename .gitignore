@@ -1,0 +1,20 @@
+# .NET
+server/**/bin/
+server/**/obj/
+*.user
+*.db
+*.db-shm
+*.db-wal
+
+# Node / Vite
+client/node_modules/
+client/dist/
+client/.vite/
+*.log
+
+# Editors / OS
+.vs/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
