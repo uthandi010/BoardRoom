@@ -57,15 +57,18 @@ export function BoardPage() {
     event.dataTransfer.effectAllowed = "move";
   };
 
-  const handleDrop = (toColumnId: number) => async (event: DragEvent) => {
+  // `index` is the drop position within the target column; the server
+  // re-sequences the column(s) around it.
+  const handleDrop = (toColumnId: number, index: number) => async (event: DragEvent) => {
     event.preventDefault();
+    event.stopPropagation();
     const dragged = draggedCard;
     setDraggedCard(null);
-    if (!dragged || dragged.fromColumnId === toColumnId) {
+    if (!dragged) {
       return;
     }
     try {
-      await cardsApi.updateCard(dragged.cardId, { columnId: toColumnId });
+      await cardsApi.updateCard(dragged.cardId, { columnId: toColumnId, order: index });
       await loadBoard();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not move that card.");
@@ -119,7 +122,7 @@ export function BoardPage() {
               key={column.id}
               className="board-column"
               onDragOver={(event) => event.preventDefault()}
-              onDrop={handleDrop(column.id)}
+              onDrop={handleDrop(column.id, column.cards.length)}
             >
               <div className="board-column-header">
                 <h3>{column.name}</h3>
@@ -127,12 +130,14 @@ export function BoardPage() {
               </div>
 
               <div className="board-column-cards">
-                {column.cards.map((card) => (
+                {column.cards.map((card, cardIndex) => (
                   <div
                     key={card.id}
                     className="board-card-item"
                     draggable
                     onDragStart={handleDragStart(card.id, column.id)}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={handleDrop(column.id, cardIndex)}
                   >
                     <div className="board-card-item-top">
                       <p>{card.title}</p>

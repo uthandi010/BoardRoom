@@ -59,6 +59,16 @@ public class CardsController : ControllerBase
             return BadRequest(new { message = "Card title is required." });
         }
 
+        if (request.Title.Trim().Length > Limits.CardTitle)
+        {
+            return BadRequest(new { message = $"Card title must be at most {Limits.CardTitle} characters." });
+        }
+
+        if (request.Description is not null && request.Description.Trim().Length > Limits.CardDescription)
+        {
+            return BadRequest(new { message = $"Card description must be at most {Limits.CardDescription} characters." });
+        }
+
         if (request.AssigneeId is int assigneeId)
         {
             var assigneeIsMember = await _context.WorkspaceMembers
@@ -119,31 +129,43 @@ public class CardsController : ControllerBase
             {
                 return BadRequest(new { message = "Card title cannot be blank." });
             }
+            if (request.Title.Trim().Length > Limits.CardTitle)
+            {
+                return BadRequest(new { message = $"Card title must be at most {Limits.CardTitle} characters." });
+            }
             card.Title = request.Title.Trim();
         }
 
         if (request.Description is not null)
         {
+            if (request.Description.Trim().Length > Limits.CardDescription)
+            {
+                return BadRequest(new { message = $"Card description must be at most {Limits.CardDescription} characters." });
+            }
             card.Description = request.Description.Trim();
         }
 
-        if (request.ColumnId is int newColumnId && newColumnId != card.ColumnId)
+        if (request.Order is < 0)
+        {
+            return BadRequest(new { message = "Order cannot be negative." });
+        }
+
+        var sourceColumnId = card.ColumnId;
+        var targetColumnId = request.ColumnId ?? sourceColumnId;
+        var moved = targetColumnId != sourceColumnId;
+
+        if (moved)
         {
             var targetColumn = await _context.BoardColumns
-                .FirstOrDefaultAsync(c => c.Id == newColumnId);
+                .FirstOrDefaultAsync(c => c.Id == targetColumnId);
 
             if (targetColumn is null || targetColumn.BoardId != card.Column!.BoardId)
             {
                 return BadRequest(new { message = "Target column must belong to the same board." });
             }
-
-            card.ColumnId = newColumnId;
         }
 
-        if (request.Order is int newOrder)
-        {
-            card.Order = newOrder;
-        }
+        var reorder = moved || request.Order is not null;
 
         if (request.ClearAssignee)
         {
@@ -160,7 +182,41 @@ public class CardsController : ControllerBase
             card.AssigneeId = assigneeId;
         }
 
+        // Re-sequence the affected column(s) so Order stays a dense 0..n-1
+        // sequence: request.Order is the drop index within the target column
+        // (clamped to the end; omitted means append when changing column).
+        await using var transaction = await _context.Database.BeginTransactionAsync();
+
+        if (reorder)
+        {
+            var siblings = await _context.Cards
+                .Where(c => c.ColumnId == targetColumnId && c.Id != card.Id)
+                .OrderBy(c => c.Order).ThenBy(c => c.Id)
+                .ToListAsync();
+
+            var index = Math.Min(request.Order ?? siblings.Count, siblings.Count);
+            siblings.Insert(index, card);
+            card.ColumnId = targetColumnId;
+            for (var i = 0; i < siblings.Count; i++)
+            {
+                siblings[i].Order = i;
+            }
+
+            if (moved)
+            {
+                var sourceCards = await _context.Cards
+                    .Where(c => c.ColumnId == sourceColumnId && c.Id != card.Id)
+                    .OrderBy(c => c.Order).ThenBy(c => c.Id)
+                    .ToListAsync();
+                for (var i = 0; i < sourceCards.Count; i++)
+                {
+                    sourceCards[i].Order = i;
+                }
+            }
+        }
+
         await _context.SaveChangesAsync();
+        await transaction.CommitAsync();
 
         var assigneeName = card.AssigneeId is null
             ? null

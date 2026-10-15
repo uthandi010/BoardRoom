@@ -13,6 +13,21 @@ export function listMembers(workspaceId: number): Promise<MemberSummary[]> {
   return apiRequest<MemberSummary[]>(`/api/workspaces/${workspaceId}/members`);
 }
 
+export function updateMemberRole(
+  workspaceId: number,
+  userId: number,
+  role: WorkspaceRole
+): Promise<MemberSummary> {
+  return apiRequest<MemberSummary>(`/api/workspaces/${workspaceId}/members/${userId}`, {
+    method: "PATCH",
+    body: { role },
+  });
+}
+
+export function removeMember(workspaceId: number, userId: number): Promise<void> {
+  return apiRequest<void>(`/api/workspaces/${workspaceId}/members/${userId}`, { method: "DELETE" });
+}
+
 export function inviteMember(
   workspaceId: number,
   email: string,

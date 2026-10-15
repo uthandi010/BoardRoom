@@ -54,16 +54,20 @@ public class BoardsController : ControllerBase
         {
             return BadRequest(new { message = "Board name is required." });
         }
-
-        var board = new Board { WorkspaceId = workspaceId, Name = request.Name.Trim() };
-        _context.Boards.Add(board);
-        await _context.SaveChangesAsync();
+        if (request.Name.Trim().Length > Limits.EntityName)
+        {
+            return BadRequest(new { message = $"Board name must be at most {Limits.EntityName} characters." });
+        }
 
         // Seed a default set of columns so a freshly created board isn't empty.
+        // They are added through the navigation property so one SaveChanges
+        // persists the board and its columns atomically.
+        var board = new Board { WorkspaceId = workspaceId, Name = request.Name.Trim() };
         for (var i = 0; i < DefaultColumns.Length; i++)
         {
-            _context.BoardColumns.Add(new BoardColumn { BoardId = board.Id, Name = DefaultColumns[i], Order = i });
+            board.Columns.Add(new BoardColumn { Name = DefaultColumns[i], Order = i });
         }
+        _context.Boards.Add(board);
         await _context.SaveChangesAsync();
 
         return Ok(new BoardSummary(board.Id, board.Name, board.WorkspaceId));
@@ -72,6 +76,23 @@ public class BoardsController : ControllerBase
     [HttpGet("boards/{boardId:int}")]
     public async Task<ActionResult<BoardDetail>> GetBoard(int boardId)
     {
+        // Check membership before loading the (potentially large) board graph.
+        var workspaceId = await _context.Boards
+            .Where(b => b.Id == boardId)
+            .Select(b => (int?)b.WorkspaceId)
+            .FirstOrDefaultAsync();
+
+        if (workspaceId is null)
+        {
+            return NotFound();
+        }
+
+        var membership = await _authz.FindMembershipAsync(workspaceId.Value, User.GetUserId());
+        if (membership is null)
+        {
+            return Forbid();
+        }
+
         var board = await _context.Boards
             .Include(b => b.Columns.OrderBy(c => c.Order))
             .ThenInclude(c => c.Cards.OrderBy(card => card.Order))
@@ -81,12 +102,6 @@ public class BoardsController : ControllerBase
         if (board is null)
         {
             return NotFound();
-        }
-
-        var membership = await _authz.FindMembershipAsync(board.WorkspaceId, User.GetUserId());
-        if (membership is null)
-        {
-            return Forbid();
         }
 
         var detail = new BoardDetail(
@@ -123,6 +138,10 @@ public class BoardsController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Name))
         {
             return BadRequest(new { message = "Column name is required." });
+        }
+        if (request.Name.Trim().Length > Limits.EntityName)
+        {
+            return BadRequest(new { message = $"Column name must be at most {Limits.EntityName} characters." });
         }
 
         var maxOrder = await _context.BoardColumns

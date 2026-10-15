@@ -24,8 +24,12 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
         _connection.Open();
     }
 
+    public const string TestJwtKey = "test-only-jwt-signing-key-0123456789-abcdef";
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        builder.UseSetting("Jwt:Key", TestJwtKey);
+
         builder.ConfigureServices(services =>
         {
             var descriptor = services.SingleOrDefault(

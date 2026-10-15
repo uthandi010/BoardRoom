@@ -48,6 +48,10 @@ public class WorkspacesController : ControllerBase
         {
             return BadRequest(new { message = "Workspace name is required." });
         }
+        if (request.Name.Trim().Length > Limits.EntityName)
+        {
+            return BadRequest(new { message = $"Workspace name must be at most {Limits.EntityName} characters." });
+        }
 
         var userId = User.GetUserId();
         var workspace = new Workspace { Name = request.Name.Trim(), OwnerId = userId };
@@ -94,6 +98,16 @@ public class WorkspacesController : ControllerBase
             return BadRequest(new { message = "A workspace can only have one owner." });
         }
 
+        if (string.IsNullOrWhiteSpace(request.Email))
+        {
+            return BadRequest(new { message = "Email is required." });
+        }
+
+        if (!Enum.IsDefined(request.Role))
+        {
+            return BadRequest(new { message = "Invalid role." });
+        }
+
         var normalizedEmail = request.Email.Trim().ToLowerInvariant();
         var invitedUser = await _context.Users.FirstOrDefaultAsync(u => u.Email == normalizedEmail);
         if (invitedUser is null)
@@ -118,5 +132,92 @@ public class WorkspacesController : ControllerBase
         await _context.SaveChangesAsync();
 
         return Ok(new MemberSummary(invitedUser.Id, invitedUser.Name, invitedUser.Email, newMember.Role));
+    }
+
+    [HttpPatch("{workspaceId:int}/members/{userId:int}")]
+    public async Task<ActionResult<MemberSummary>> UpdateMemberRole(
+        int workspaceId, int userId, UpdateMemberRoleRequest request)
+    {
+        var actor = await _authz.FindMembershipAsync(workspaceId, User.GetUserId());
+        if (actor is null || !_authz.Satisfies(actor.Role, WorkspaceRole.Admin))
+        {
+            return Forbid();
+        }
+
+        if (!Enum.IsDefined(request.Role))
+        {
+            return BadRequest(new { message = "Invalid role." });
+        }
+        if (request.Role == WorkspaceRole.Owner)
+        {
+            return BadRequest(new { message = "A workspace can only have one owner." });
+        }
+
+        var target = await _context.WorkspaceMembers
+            .Include(m => m.User)
+            .FirstOrDefaultAsync(m => m.WorkspaceId == workspaceId && m.UserId == userId);
+        if (target is null)
+        {
+            return NotFound(new { message = "That user is not a member of this workspace." });
+        }
+
+        if (target.Role == WorkspaceRole.Owner)
+        {
+            return BadRequest(new { message = "The workspace owner's role cannot be changed." });
+        }
+
+        // Only the Owner may promote to Admin or change an Admin's role.
+        var touchesAdmin = request.Role == WorkspaceRole.Admin || target.Role == WorkspaceRole.Admin;
+        if (touchesAdmin && actor.Role != WorkspaceRole.Owner)
+        {
+            return Forbid();
+        }
+
+        target.Role = request.Role;
+        await _context.SaveChangesAsync();
+
+        return Ok(new MemberSummary(target.UserId, target.User!.Name, target.User.Email, target.Role));
+    }
+
+    [HttpDelete("{workspaceId:int}/members/{userId:int}")]
+    public async Task<IActionResult> RemoveMember(int workspaceId, int userId)
+    {
+        var actor = await _authz.FindMembershipAsync(workspaceId, User.GetUserId());
+        if (actor is null || !_authz.Satisfies(actor.Role, WorkspaceRole.Admin))
+        {
+            return Forbid();
+        }
+
+        var target = await _context.WorkspaceMembers
+            .FirstOrDefaultAsync(m => m.WorkspaceId == workspaceId && m.UserId == userId);
+        if (target is null)
+        {
+            return NotFound(new { message = "That user is not a member of this workspace." });
+        }
+
+        if (target.Role == WorkspaceRole.Owner)
+        {
+            return BadRequest(new { message = "The workspace owner cannot be removed." });
+        }
+
+        // Only the Owner may remove an Admin.
+        if (target.Role == WorkspaceRole.Admin && actor.Role != WorkspaceRole.Owner)
+        {
+            return Forbid();
+        }
+
+        // Unassign their cards in this workspace so no card points at a non-member.
+        var assignedCards = await _context.Cards
+            .Where(c => c.AssigneeId == userId && c.Column!.Board!.WorkspaceId == workspaceId)
+            .ToListAsync();
+        foreach (var card in assignedCards)
+        {
+            card.AssigneeId = null;
+        }
+
+        _context.WorkspaceMembers.Remove(target);
+        await _context.SaveChangesAsync();
+
+        return NoContent();
     }
 }

@@ -1,5 +1,6 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5199";
 const TOKEN_KEY = "boardroom_token";
+const USER_KEY = "boardroom_user";
 
 export class ApiError extends Error {
   status: number;
@@ -46,13 +47,34 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   }
 
   const text = await response.text();
-  const data = text ? JSON.parse(text) : undefined;
+  let data: { message?: unknown } | undefined;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = undefined;
+    }
+  }
+
+  if (response.status === 401 && token) {
+    // The stored token was rejected (expired or invalid): drop the session
+    // and send the user back to the login page.
+    setToken(null);
+    localStorage.removeItem(USER_KEY);
+    if (window.location.pathname !== "/login") {
+      window.location.assign("/login");
+    }
+  }
 
   if (!response.ok) {
     const message =
       (data && typeof data.message === "string" && data.message) ||
       `Request failed with status ${response.status}`;
     throw new ApiError(response.status, message);
+  }
+
+  if (data === undefined && text) {
+    throw new ApiError(response.status, "The server returned an unexpected response.");
   }
 
   return data as T;
