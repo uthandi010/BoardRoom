@@ -35,6 +35,21 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = "Password must be at least 8 characters." });
         }
 
+        if (request.Password.Length > Limits.Password)
+        {
+            return BadRequest(new { message = $"Password must be at most {Limits.Password} characters." });
+        }
+
+        if (request.Name.Trim().Length > Limits.PersonName)
+        {
+            return BadRequest(new { message = $"Name must be at most {Limits.PersonName} characters." });
+        }
+
+        if (request.Email.Trim().Length > Limits.Email)
+        {
+            return BadRequest(new { message = $"Email must be at most {Limits.Email} characters." });
+        }
+
         var normalizedEmail = request.Email.Trim().ToLowerInvariant();
         var exists = await _context.Users.AnyAsync(u => u.Email == normalizedEmail);
         if (exists)
@@ -59,6 +74,11 @@ public class AuthController : ControllerBase
     [HttpPost("login")]
     public async Task<ActionResult<AuthResponse>> Login(LoginRequest request)
     {
+        if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrEmpty(request.Password))
+        {
+            return BadRequest(new { message = "Email and password are required." });
+        }
+
         var normalizedEmail = request.Email.Trim().ToLowerInvariant();
         var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == normalizedEmail);
 
