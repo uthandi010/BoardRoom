@@ -70,6 +70,47 @@ describe("apiRequest", () => {
     await expect(apiRequest("/api/anything")).rejects.toBeInstanceOf(ApiError);
   });
 
+  it("throws an ApiError instead of a SyntaxError on a non-JSON error body", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new Response("<html>Bad Gateway</html>", { status: 502 })
+    );
+
+    await expect(apiRequest("/api/anything")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 502,
+    });
+  });
+
+  it("throws an ApiError when a successful response is not valid JSON", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(new Response("not json", { status: 200 }));
+
+    await expect(apiRequest("/api/anything")).rejects.toBeInstanceOf(ApiError);
+  });
+
+  it("clears the token and redirects to /login on a 401 for an authenticated request", async () => {
+    const assign = vi.fn();
+    const original = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { pathname: "/workspaces", assign },
+    });
+    try {
+      setToken("expired-token");
+      localStorage.setItem("boardroom_user", "{}");
+      (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+        new Response(JSON.stringify({ message: "Unauthorized" }), { status: 401 })
+      );
+
+      await expect(apiRequest("/api/workspaces")).rejects.toMatchObject({ status: 401 });
+
+      expect(getToken()).toBeNull();
+      expect(localStorage.getItem("boardroom_user")).toBeNull();
+      expect(assign).toHaveBeenCalledWith("/login");
+    } finally {
+      Object.defineProperty(window, "location", { configurable: true, value: original });
+    }
+  });
+
   it("round-trips the token through localStorage", () => {
     setToken("abc123");
     expect(getToken()).toBe("abc123");

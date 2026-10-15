@@ -80,8 +80,7 @@ npm test
 - Every workspace-scoped endpoint checks membership *and* role server-side
   (`WorkspaceAuthorizationService`) — a non-member gets `403` even if they know a valid URL, and a
   plain `Member` can't invite people even by calling the API directly.
-- The JWT signing key in `appsettings.json` is a placeholder for local development only — replace
-  it (and move it to a secret store) before deploying anywhere real.
+- The JWT signing key is no longer committed. Outside Development the API refuses to start unless `Jwt__Key` (env var) or `Jwt:Key` is set to a random secret of at least 32 bytes; in Development an ephemeral key is generated at startup. CORS origins are configured with `Cors:AllowedOrigins` (defaults to the local Vite dev server).
 
 ## What's intentionally left out
 
